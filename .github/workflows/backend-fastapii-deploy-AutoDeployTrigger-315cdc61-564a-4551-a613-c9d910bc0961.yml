@@ -1,49 +1,53 @@
-name: Trigger auto deployment for backend-fastapii-deploy
+name: CI/CD FastAPI a Azure Container Apps
 
-# When this action will be executed
 on:
-  # Automatically trigger it when detected changes in repo
   push:
-    branches: 
-      [ deployment ]
-    paths:
-    - '**'
-    - '.github/workflows/backend-fastapii-deploy-AutoDeployTrigger-315cdc61-564a-4551-a613-c9d910bc0961.yml'
+    branches:
+      - deployment
+  workflow_dispatch:
 
-  # Allow manual trigger 
-  workflow_dispatch:      
+env:
+  AZURE_RESOURCE_GROUP: 'portafolio-2025'
+  AZURE_CONTAINER_APP: 'backend-fastapii-deploy'
+  ACR_LOGIN_SERVER: 'backendescnil994.azurecr.io'
+  ACR_REPOSITORY: 'backend-fastapi'
+  IMAGE_TAG: ${{ github.sha }}
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     permissions: 
-      id-token: write #This is required for requesting the OIDC JWT Token
-      contents: read #Required when GH token is used to authenticate with private repo
+      id-token: write
+      contents: read 
 
     steps:
-      - name: Checkout to the branch
-        uses: actions/checkout@v2
+      - name: Checkout del Código
+        uses: actions/checkout@v3
 
-      - name: Azure Login
+      # === ETAPA 1: BUILD & PUSH ===
+      - name: Login en Azure
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.BACKENDFASTAPIIDEPLOY_AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.BACKENDFASTAPIIDEPLOY_AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.BACKENDFASTAPIIDEPLOY_AZURE_SUBSCRIPTION_ID }}
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          
+      - name: Login en ACR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
 
-      - name: Build and push container image to registry
+      - name: Construir y Subir Imagen
+        uses: docker/build-and-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ env.ACR_LOGIN_SERVER }}/${{ env.ACR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+          
+      # === ETAPA 2: DEPLOY ===
+      - name: Deploy a Container App
         uses: azure/container-apps-deploy-action@v2
         with:
-          appSourcePath: ${{ github.workspace }}
-          _dockerfilePathKey_: _dockerfilePath_
-          _targetLabelKey_: _targetLabel_
-          registryUrl: 
-          registryUsername: ${{ secrets.BACKENDFASTAPIIDEPLOY_REGISTRY_USERNAME }}
-          registryPassword: ${{ secrets.BACKENDFASTAPIIDEPLOY_REGISTRY_PASSWORD }}
-          containerAppName: backend-fastapii-deploy
-          resourceGroup: portafolio-2025
-          imageToBuild: default/[parameters('containerAppName')]:${{ github.sha }}
-          _buildArgumentsKey_: |
-            _buildArgumentsValues_
-
-
+          containerAppName: ${{ env.AZURE_CONTAINER_APP }}
+          resourceGroup: ${{ env.AZURE_RESOURCE_GROUP }}
+          imageToDeploy: ${{ env.ACR_LOGIN_SERVER }}/${{ env.ACR_REPOSITORY }}:${{ env.IMAGE_TAG }}
