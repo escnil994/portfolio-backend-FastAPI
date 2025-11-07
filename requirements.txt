@@ -26,3 +26,4 @@ pyotp==2.9.0
 qrcode[pil]==8.2
 
 azure-storage-blob==12.27.1
+
