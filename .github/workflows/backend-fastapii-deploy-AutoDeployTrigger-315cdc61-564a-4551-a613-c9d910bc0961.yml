@@ -10,7 +10,6 @@ env:
   CONTAINER_APP_NAME: ${{ secrets.AZURE_CONTAINER_APP_NAME }}
   CONTAINER_APP_ENV: portafolio-env
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   build-and-deploy:
@@ -22,6 +21,10 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
+
+    - name: Set lowercase image name
+      id: image
+      run: echo "name=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
 
     - name: Log in to GitHub Container Registry
       uses: docker/login-action@v2
@@ -35,7 +38,9 @@ jobs:
       with:
         context: .
         push: true
-        tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+        tags: |
+          ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:${{ github.sha }}
+          ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:latest
 
     - name: Azure Login
       uses: azure/login@v1
@@ -48,6 +53,6 @@ jobs:
         resourceGroup: ${{ env.RESOURCE_GROUP }}
         containerAppName: ${{ env.CONTAINER_APP_NAME }}
         containerAppEnvironment: ${{ env.CONTAINER_APP_ENV }}
-        imageToDeploy: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+        imageToDeploy: ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:${{ github.sha }}
         targetPort: 8000
         ingress: external
