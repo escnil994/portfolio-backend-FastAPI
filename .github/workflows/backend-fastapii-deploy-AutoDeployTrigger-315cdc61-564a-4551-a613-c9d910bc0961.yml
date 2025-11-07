@@ -29,7 +29,7 @@ jobs:
         resourceGroup: ${{ env.RESOURCE_GROUP }}
         containerAppName: ${{ env.CONTAINER_APP_NAME }}
         containerAppEnvironment: ${{ env.CONTAINER_APP_ENV }}
-        imageToBuild: ${{ env.CONTAINER_APP_NAME }}:${{ github.sha }}
+        appSourcePath: ${{ github.workspace }}
         dockerfilePath: Dockerfile
         targetPort: 8000
         ingress: external
