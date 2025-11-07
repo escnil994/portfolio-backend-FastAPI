@@ -18,18 +18,30 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v3
 
-    - name: Azure Login
-      uses: azure/login@v1
-      with:
-        creds: ${{ secrets.AZURE_CREDENTIALS }}
+      # === ETAPA 1: BUILD & PUSH ===
+      - name: Login en Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          
+      - name: Login en ACR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
 
-    - name: Build and deploy Container App
-      uses: azure/container-apps-deploy-action@v1
-      with:
-        resourceGroup: ${{ env.RESOURCE_GROUP }}
-        containerAppName: ${{ env.CONTAINER_APP_NAME }}
-        containerAppEnvironment: ${{ env.CONTAINER_APP_ENV }}
-        imageToBuild: ${{ env.CONTAINER_APP_NAME }}:${{ github.sha }}
-        dockerfilePath: Dockerfile
-        targetPort: 8080
-        ingress: external
+      - name: Construir y Subir Imagen
+        uses: docker/build-and-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ env.ACR_LOGIN_SERVER }}/${{ env.ACR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+          
+      # === ETAPA 2: DEPLOY ===
+      - name: Deploy a Container App
+        uses: azure/container-apps-deploy-action@v2
+        with:
+          containerAppName: ${{ env.AZURE_CONTAINER_APP }}
+          resourceGroup: ${{ env.AZURE_RESOURCE_GROUP }}
+          imageToDeploy: ${{ env.ACR_LOGIN_SERVER }}/${{ env.ACR_REPOSITORY }}:${{ env.IMAGE_TAG }}
