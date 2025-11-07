@@ -12,9 +12,8 @@ RUN mkdir -p /etc/apt/keyrings
 RUN curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /etc/apt/keyrings/microsoft.gpg
 RUN echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/microsoft.gpg] https://packages.microsoft.com/debian/12/prod bookworm main" > /etc/apt/sources.list.d/mssql-tools.list
 
-# Acepta la EULA antes de instalar
 RUN apt-get update && ACCEPT_EULA=Y apt-get install -y --no-install-recommends \
-    msodbcsql17 \
+    msodbcsql18 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
