@@ -38,7 +38,7 @@ jobs:
           password: ${{ secrets.ACR_PASSWORD }}
 
       - name: Construir y Subir Imagen
-        uses: docker/build-and-push-action@v5
+        uses: docker/build-push-action@v5
         with:
           context: .
           push: true
@@ -50,4 +50,5 @@ jobs:
         with:
           containerAppName: ${{ env.AZURE_CONTAINER_APP }}
           resourceGroup: ${{ env.AZURE_RESOURCE_GROUP }}
+
           imageToDeploy: ${{ env.ACR_LOGIN_SERVER }}/${{ env.ACR_REPOSITORY }}:${{ env.IMAGE_TAG }}
