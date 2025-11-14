@@ -1,0 +1,58 @@
+name: Deploy to Azure Container Apps
+
+on:
+  push:
+    branches: [ deployment ]
+  workflow_dispatch:
+
+env:
+  RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+  CONTAINER_APP_NAME: ${{ secrets.AZURE_CONTAINER_APP_NAME }}
+  CONTAINER_APP_ENV: portafolio-env
+  REGISTRY: ghcr.io
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set lowercase image name
+      id: image
+      run: echo "name=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+
+    - name: Log in to GitHub Container Registry
+      uses: docker/login-action@v2
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v4
+      with:
+        context: .
+        push: true
+        tags: |
+          ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:${{ github.sha }}
+          ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:latest
+
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Deploy to Container Apps
+      uses: azure/container-apps-deploy-action@v1
+      with:
+        resourceGroup: ${{ env.RESOURCE_GROUP }}
+        containerAppName: ${{ env.CONTAINER_APP_NAME }}
+        containerAppEnvironment: ${{ env.CONTAINER_APP_ENV }}
+        imageToDeploy: ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:${{ github.sha }}
+        targetPort: 8000
+        ingress: external
