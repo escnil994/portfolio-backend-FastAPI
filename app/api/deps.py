@@ -1,4 +1,4 @@
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
@@ -7,11 +7,8 @@ from app.db.session import get_db
 from app.services.auth import auth_service
 from app.models.user import User
 from app.utils.helpers import get_client_ip
-from fastapi import Request
-
 
 security = HTTPBearer()
-
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
@@ -29,7 +26,7 @@ async def get_current_user(
     if payload is None:
         raise credentials_exception
     
-    user_id: int = payload.get("user_id")
+    user_id = payload.get("user_id")
     if user_id is None:
         raise credentials_exception
     
@@ -45,7 +42,6 @@ async def get_current_user(
     
     return user
 
-
 async def get_current_admin(
     current_user: User = Depends(get_current_user)
 ) -> User:
@@ -55,7 +51,6 @@ async def get_current_admin(
             detail="Not enough permissions"
         )
     return current_user
-
 
 def get_client_ip_from_request(request: Request) -> Optional[str]:
     return get_client_ip(request)

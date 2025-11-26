@@ -1,11 +1,7 @@
-# app/core/logging.py
-
 import logging
 import sys
 from pathlib import Path
 from typing import Optional
-from app.config import settings
-
 
 def setup_logging(
     log_level: str = "INFO",
@@ -30,7 +26,7 @@ def setup_logging(
     
     logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
     logging.getLogger("azure").setLevel(logging.WARNING)
-
+    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
 def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(name)

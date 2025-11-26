@@ -1,7 +1,4 @@
-# app/core/exceptions.py
-
 from fastapi import HTTPException, status
-
 
 class NotFoundException(HTTPException):
     def __init__(self, detail: str = "Resource not found"):
@@ -10,14 +7,12 @@ class NotFoundException(HTTPException):
             detail=detail
         )
 
-
 class BadRequestException(HTTPException):
     def __init__(self, detail: str = "Bad request"):
         super().__init__(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=detail
         )
-
 
 class UnauthorizedException(HTTPException):
     def __init__(self, detail: str = "Unauthorized"):
@@ -27,14 +22,12 @@ class UnauthorizedException(HTTPException):
             headers={"WWW-Authenticate": "Bearer"}
         )
 
-
 class ForbiddenException(HTTPException):
     def __init__(self, detail: str = "Forbidden"):
         super().__init__(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=detail
         )
-
 
 class ConflictException(HTTPException):
     def __init__(self, detail: str = "Conflict"):
@@ -43,7 +36,6 @@ class ConflictException(HTTPException):
             detail=detail
         )
 
-
 class ValidationException(HTTPException):
     def __init__(self, detail: str = "Validation error"):
         super().__init__(
@@ -51,14 +43,12 @@ class ValidationException(HTTPException):
             detail=detail
         )
 
-
 class TooManyRequestsException(HTTPException):
     def __init__(self, detail: str = "Too many requests"):
         super().__init__(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=detail
         )
-
 
 class InternalServerException(HTTPException):
     def __init__(self, detail: str = "Internal server error"):

@@ -1,7 +1,5 @@
-# app/api/v1/router.py
-
 from fastapi import APIRouter
-from app.api.v1.endpoints import auth, profiles, projects, blog, contact, reactions, subscribers
+from app.api.v1.endpoints import auth, profiles, projects, blog, contact, reactions, subscribers, messages
 
 api_router = APIRouter()
 
@@ -12,3 +10,4 @@ api_router.include_router(blog.router, prefix="/blog", tags=["Blog"])
 api_router.include_router(contact.router, prefix="/contact", tags=["Contact"])
 api_router.include_router(reactions.router, prefix="/reactions", tags=["Reactions"])
 api_router.include_router(subscribers.router, prefix="/subscribes", tags=["Subscribes"])
+api_router.include_router(messages.router, prefix="/messages", tags=["Admin Messages"])

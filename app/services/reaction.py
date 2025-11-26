@@ -1,8 +1,6 @@
-# app/services/reaction.py
-
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, delete
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict, List, Any
 import logging
 
 from app.models.reaction import Reaction, ReactionTypeEnum
@@ -10,7 +8,6 @@ from app.models.blog import BlogPost
 from app.models.project import Project
 
 logger = logging.getLogger(__name__)
-
 
 class ReactionService:
     
@@ -101,7 +98,7 @@ class ReactionService:
         entity_id: int,
         entity_type: str,
         user_email: Optional[str] = None
-    ) -> dict:
+    ) -> Dict[str, Any]:
         result = await db.execute(
             select(
                 Reaction.reaction_type,
@@ -198,7 +195,7 @@ class ReactionService:
         entity_type: str,
         limit: int = 100,
         offset: int = 0
-    ):
+    ) -> List[Reaction]:
         result = await db.execute(
             select(Reaction)
             .where(
@@ -211,7 +208,6 @@ class ReactionService:
             .limit(limit)
             .offset(offset)
         )
-        return result.scalars().all()
-
+        return list(result.scalars().all())
 
 reaction_service = ReactionService()

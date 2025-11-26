@@ -1,14 +1,11 @@
-# app/db/repositories/project.py
-
 from typing import Optional, Sequence
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, update
 from sqlalchemy.orm import selectinload
 
 from app.db.repositories.base import BaseRepository
 from app.models.project import Project
 from app.schemas.project import ProjectCreate, ProjectUpdate
-
 
 class ProjectRepository(BaseRepository[Project, ProjectCreate, ProjectUpdate]):
     
@@ -20,14 +17,14 @@ class ProjectRepository(BaseRepository[Project, ProjectCreate, ProjectUpdate]):
         db: AsyncSession,
         project_id: int
     ) -> Optional[Project]:
-        return await self.get(
-            db,
-            project_id,
-            options=[
-                selectinload(Project.comments),
-                selectinload(Project.videos)
-            ]
+        
+        query = select(self.model).where(self.model.id == project_id).options(
+            selectinload(Project.comments),
+            selectinload(Project.videos),
+            selectinload(Project.author)
         )
+        result = await db.execute(query)
+        return result.scalars().unique().one_or_none()
     
     async def get_featured(
         self,
@@ -40,7 +37,8 @@ class ProjectRepository(BaseRepository[Project, ProjectCreate, ProjectUpdate]):
             skip=skip,
             limit=limit,
             filters=[Project.featured == True],
-            order_by=[desc(Project.created_at)]
+            order_by=[desc(Project.created_at)],
+            options=[selectinload(Project.author)]
         )
     
     async def get_all_ordered(
@@ -54,12 +52,15 @@ class ProjectRepository(BaseRepository[Project, ProjectCreate, ProjectUpdate]):
         if featured is not None:
             filters.append(Project.featured == featured)
         
+        options = [selectinload(Project.author)]
+        
         return await self.get_multi(
             db,
             skip=skip,
             limit=limit,
             filters=filters if filters else None,
-            order_by=[desc(Project.created_at)]
+            order_by=[desc(Project.created_at)],
+            options=options
         )
     
     async def search_by_technology(
@@ -76,5 +77,16 @@ class ProjectRepository(BaseRepository[Project, ProjectCreate, ProjectUpdate]):
         result = await db.execute(query)
         return result.scalars().all()
 
+    async def increment_views(
+        self,
+        db: AsyncSession,
+        project_id: int
+    ) -> None:
+        await db.execute(
+            update(Project)
+            .where(Project.id == project_id)
+            .values(views=Project.views + 1)
+        )
+        await db.commit()
 
 project_repository = ProjectRepository()

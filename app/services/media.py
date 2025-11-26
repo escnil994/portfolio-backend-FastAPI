@@ -1,4 +1,4 @@
-from typing import List, Optional, Literal
+from typing import List, Optional, Literal, Dict
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, delete
 from fastapi import HTTPException, status, UploadFile
@@ -6,13 +6,9 @@ from fastapi import HTTPException, status, UploadFile
 from app.models.media import Image, Video
 from app.core.azure_storage import azure_storage_service
 
-
 EntityType = Literal["project", "blog_post", "profile"]
 
-
 class MediaService:
-    """Service for managing media (images and videos) with Azure Blob Storage integration"""
-    
     
     async def get_images(
         self,
@@ -20,7 +16,6 @@ class MediaService:
         entity_id: int,
         entity_type: EntityType
     ) -> List[Image]:
-        """Get all images for a specific entity, ordered by image_order"""
         query = select(Image).where(
             and_(
                 Image.entity_id == entity_id,
@@ -38,7 +33,6 @@ class MediaService:
         entity_id: int,
         entity_type: EntityType
     ) -> Optional[Image]:
-        """Get a specific image by ID, entity_id and entity_type"""
         query = select(Image).where(
             and_(
                 Image.id == image_id,
@@ -61,31 +55,15 @@ class MediaService:
         *,
         commit: bool = True
     ) -> Image:
-        """
-        Upload image to Azure Blob Storage and create database record
-        
-        Args:
-            db: Database session
-            file: Uploaded file
-            entity_id: ID of the entity (project, blog_post, profile)
-            entity_type: Type of entity
-            image_order: Order for displaying images
-            alt_text: Alternative text for accessibility
-            commit: Whether to commit the transaction
-            
-        Returns:
-            Created Image object with Azure blob URL
-        """
         try:
+            # CORRECCIÓN: Usar file.size directamente
+            file_size = file.size
+            
             blob_url, blob_name = await azure_storage_service.upload_image(
                 file=file,
                 entity_type=entity_type,
                 entity_id=entity_id
             )
-            
-            file.file.seek(0, 2)
-            file_size = file.file.tell()
-            file.file.seek(0)
             
             image = Image(
                 entity_id=entity_id,
@@ -109,7 +87,7 @@ class MediaService:
         except HTTPException:
             raise
         except Exception as e:
-            if 'blob_name' in locals():
+            if 'blob_name' in locals() and blob_name:
                 await azure_storage_service.delete_image(blob_name)
             
             raise HTTPException(
@@ -128,10 +106,6 @@ class MediaService:
         *,
         commit: bool = True
     ) -> Image:
-        """
-        Add image with external URL (legacy method for compatibility)
-        Use upload_and_create_image for new implementations
-        """
         if not image_url or len(image_url) > 500:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -165,10 +139,6 @@ class MediaService:
         alt_text: Optional[str] = None,
         commit: bool = True
     ) -> Optional[Image]:
-        """
-        Update image metadata (order, alt_text)
-        Note: Does not support replacing the image file itself
-        """
         image = await self.get_image(db, image_id, entity_id, entity_type)
         
         if not image:
@@ -198,11 +168,6 @@ class MediaService:
         alt_text: Optional[str] = None,
         commit: bool = True
     ) -> Optional[Image]:
-        """
-        Replace an existing image with a new file
-        Deletes old blob and uploads new one
-        """
-        # Get existing image
         image = await self.get_image(db, image_id, entity_id, entity_type)
         
         if not image:
@@ -211,19 +176,15 @@ class MediaService:
         old_blob_name = image.blob_name
         
         try:
-            # Upload new image to Azure
+            # CORRECCIÓN: Usar new_file.size directamente
+            file_size = new_file.size
+
             blob_url, blob_name = await azure_storage_service.upload_image(
                 file=new_file,
                 entity_type=entity_type,
                 entity_id=entity_id
             )
             
-            # Get file size
-            new_file.file.seek(0, 2)
-            file_size = new_file.file.tell()
-            new_file.file.seek(0)
-            
-            # Update image record
             image.image_url = blob_url
             image.blob_name = blob_name
             image.file_size = file_size
@@ -239,7 +200,6 @@ class MediaService:
                 await db.commit()
                 await db.refresh(image)
             
-            # Delete old blob from Azure (fire and forget)
             if old_blob_name:
                 await azure_storage_service.delete_image(old_blob_name)
             
@@ -248,8 +208,7 @@ class MediaService:
         except HTTPException:
             raise
         except Exception as e:
-            # Clean up new blob if database update fails
-            if 'blob_name' in locals():
+            if 'blob_name' in locals() and blob_name:
                 await azure_storage_service.delete_image(blob_name)
             
             raise HTTPException(
@@ -266,9 +225,6 @@ class MediaService:
         *,
         commit: bool = True
     ) -> bool:
-        """
-        Delete image from database and Azure Blob Storage
-        """
         image = await self.get_image(db, image_id, entity_id, entity_type)
         
         if not image:
@@ -294,9 +250,6 @@ class MediaService:
         *,
         commit: bool = True
     ) -> int:
-        """
-        Delete all images for an entity from database and Azure Blob Storage
-        """
         images = await self.get_images(db, entity_id, entity_type)
         blob_names = [img.blob_name for img in images if img.blob_name]
         
@@ -322,10 +275,7 @@ class MediaService:
         db: AsyncSession,
         entity_ids: List[int],
         entity_type: EntityType
-    ) -> dict[int, List[Image]]:
-        """
-        Load images for multiple entities efficiently (prevents N+1 queries)
-        """
+    ) -> Dict[int, List[Image]]:
         if not entity_ids:
             return {}
         
@@ -355,7 +305,6 @@ class MediaService:
         entity_id: int,
         entity_type: Literal["project", "blog_post"]
     ) -> List[Video]:
-        """Get all videos for a specific entity"""
         if entity_type == "project":
             filter_condition = Video.project_id == entity_id
         elif entity_type == "blog_post":
@@ -375,7 +324,6 @@ class MediaService:
         entity_id: int,
         entity_type: Literal["project", "blog_post"]
     ) -> Optional[Video]:
-        """Get a specific video by ID"""
         if entity_type == "project":
             filter_condition = and_(Video.id == video_id, Video.project_id == entity_id)
         elif entity_type == "blog_post":
@@ -399,7 +347,6 @@ class MediaService:
         *,
         commit: bool = True
     ) -> Video:
-        """Add a video to an entity"""
         video_dict = {
             "title": title,
             "url": url,
@@ -432,7 +379,6 @@ class MediaService:
         *,
         commit: bool = True
     ) -> bool:
-        """Delete a video"""
         video = await self.get_video(db, video_id, entity_id, entity_type)
         
         if not video:
@@ -444,6 +390,5 @@ class MediaService:
             await db.commit()
         
         return True
-
 
 media_service = MediaService()

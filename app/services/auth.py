@@ -1,11 +1,11 @@
-# app/services/auth.py
-
 from datetime import datetime, timedelta
 from typing import Optional, List
-from jose import JWTError, jwt
-import bcrypt
+import jwt
+from jwt.exceptions import PyJWTError
+from passlib.context import CryptContext
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, or_
+from sqlalchemy.orm import selectinload
 import pyotp
 import qrcode
 import io
@@ -16,14 +16,15 @@ import string
 from app.config import settings
 from app.models.user import User, TwoFactorCode, LoginAttempt
 
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 class AuthService:
     
     def verify_password(self, plain_password: str, hashed_password: str) -> bool:
-        return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+        return pwd_context.verify(plain_password, hashed_password)
     
     def get_password_hash(self, password: str) -> str:
-        return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        return pwd_context.hash(password)
     
     def create_access_token(self, data: dict, expires_delta: Optional[timedelta] = None) -> str:
         to_encode = data.copy()
@@ -31,7 +32,14 @@ class AuthService:
             expire = datetime.utcnow() + expires_delta
         else:
             expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-        to_encode.update({"exp": expire})
+        to_encode.update({"exp": expire, "type": "access"})
+        encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+        return encoded_jwt
+    
+    def create_refresh_token(self, data: dict) -> str:
+        to_encode = data.copy()
+        expire = datetime.utcnow() + timedelta(days=7)
+        to_encode.update({"exp": expire, "type": "refresh"})
         encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
         return encoded_jwt
     
@@ -48,19 +56,48 @@ class AuthService:
         try:
             payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
             return payload
-        except JWTError:
+        except PyJWTError:
             return None
     
     async def get_user_by_email(self, db: AsyncSession, email: str) -> Optional[User]:
-        result = await db.execute(select(User).where(User.email == email))
+        result = await db.execute(
+            select(User)
+            .options(selectinload(User.profile))
+            .where(User.email == email)
+        )
+        return result.scalar_one_or_none()
+    
+    async def get_user_by_username(self, db: AsyncSession, username: str) -> Optional[User]:
+        result = await db.execute(
+            select(User)
+            .options(selectinload(User.profile))
+            .where(User.username == username)
+        )
+        return result.scalar_one_or_none()
+    
+    async def get_user_by_identifier(self, db: AsyncSession, identifier: str) -> Optional[User]:
+        result = await db.execute(
+            select(User)
+            .options(selectinload(User.profile))
+            .where(
+                or_(
+                    User.email == identifier,
+                    User.username == identifier
+                )
+            )
+        )
         return result.scalar_one_or_none()
     
     async def get_user_by_id(self, db: AsyncSession, user_id: int) -> Optional[User]:
-        result = await db.execute(select(User).where(User.id == user_id))
+        result = await db.execute(
+            select(User)
+            .options(selectinload(User.profile))
+            .where(User.id == user_id)
+        )
         return result.scalar_one_or_none()
     
-    async def authenticate_user(self, db: AsyncSession, email: str, password: str) -> Optional[User]:
-        user = await self.get_user_by_email(db, email)
+    async def authenticate_user(self, db: AsyncSession, identifier: str, password: str) -> Optional[User]:
+        user = await self.get_user_by_identifier(db, identifier)
         if not user:
             return None
         if not self.verify_password(password, user.hashed_password):
@@ -176,12 +213,12 @@ class AuthService:
     async def log_login_attempt(
         self, 
         db: AsyncSession, 
-        email: str, 
+        identifier: str,
         success: bool,
         ip_address: Optional[str] = None
     ):
         attempt = LoginAttempt(
-            email=email,
+            email=identifier,
             success=success,
             ip_address=ip_address
         )
@@ -191,7 +228,7 @@ class AuthService:
     async def check_login_attempts(
         self, 
         db: AsyncSession, 
-        email: str, 
+        identifier: str, 
         minutes: int = 15,
         max_attempts: int = 5
     ) -> bool:
@@ -199,7 +236,7 @@ class AuthService:
         result = await db.execute(
             select(LoginAttempt).where(
                 and_(
-                    LoginAttempt.email == email,
+                    LoginAttempt.email == identifier,
                     LoginAttempt.success == False,
                     LoginAttempt.created_at > time_threshold
                 )
@@ -213,6 +250,5 @@ class AuthService:
         if user:
             user.last_login = datetime.utcnow()
             await db.commit()
-
 
 auth_service = AuthService()

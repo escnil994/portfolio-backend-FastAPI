@@ -1,16 +1,12 @@
-# app/db/repositories/base.py
-
 from typing import Generic, TypeVar, Type, Optional, List, Any, Sequence
-from sqlalchemy import select, func, and_, delete
+from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase
 from pydantic import BaseModel
 
-
 ModelType = TypeVar("ModelType", bound=DeclarativeBase)
 CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
 UpdateSchemaType = TypeVar("UpdateSchemaType", bound=BaseModel)
-
 
 class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
     
@@ -31,19 +27,17 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
                 query = query.options(option)
         
         result = await db.execute(query)
-        return result.scalar_one_or_none()
+        return result.scalars().unique().one_or_none()
     
-    # app/db/repositories/base.py
-
     async def get_multi(
-    self,
-    db: AsyncSession,
-    *,
-    skip: int = 0,
-    limit: int = 100,
-    filters: Optional[List] = None,
-    order_by: Optional[List] = None,
-    options: Optional[List] = None
+        self,
+        db: AsyncSession,
+        *,
+        skip: int = 0,
+        limit: int = 100,
+        filters: Optional[List] = None,
+        order_by: Optional[List] = None,
+        options: Optional[List] = None
     ) -> Sequence[ModelType]:
         query = select(self.model)
         
@@ -63,7 +57,7 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         query = query.offset(skip).limit(limit)
         
         result = await db.execute(query)
-        return result.scalars().all()
+        return result.scalars().unique().all()
     
     async def get_by_field(
         self,
@@ -82,7 +76,7 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
                 query = query.options(option)
         
         result = await db.execute(query)
-        return result.scalar_one_or_none()
+        return result.scalars().unique().one_or_none()
     
     async def create(
         self,
@@ -91,7 +85,7 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         obj_in: CreateSchemaType,
         commit: bool = True
     ) -> ModelType:
-        obj_data = obj_in.model_dump() if hasattr(obj_in, 'model_dump') else obj_in.dict()
+        obj_data = obj_in.model_dump()
         db_obj = self.model(**obj_data)
         
         db.add(db_obj)
@@ -113,7 +107,7 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         if isinstance(obj_in, dict):
             update_data = obj_in
         else:
-            update_data = obj_in.model_dump(exclude_unset=True) if hasattr(obj_in, 'model_dump') else obj_in.dict(exclude_unset=True)
+            update_data = obj_in.model_dump(exclude_unset=True)
         
         for field, value in update_data.items():
             if hasattr(db_obj, field):
@@ -124,9 +118,6 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             await db.refresh(db_obj)
         
         return db_obj
-    
-    
-    
     
     async def delete(
         self,

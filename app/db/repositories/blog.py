@@ -1,5 +1,3 @@
-# app/db/repositories/blog.py
-
 from typing import Optional, Sequence
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc, update
@@ -8,7 +6,6 @@ from sqlalchemy.orm import selectinload
 from app.db.repositories.base import BaseRepository
 from app.models.blog import BlogPost
 from app.schemas.blog import BlogPostCreate, BlogPostUpdate
-
 
 class BlogRepository(BaseRepository[BlogPost, BlogPostCreate, BlogPostUpdate]):
     
@@ -27,14 +24,13 @@ class BlogRepository(BaseRepository[BlogPost, BlogPostCreate, BlogPostUpdate]):
         db: AsyncSession,
         post_id: int
     ) -> Optional[BlogPost]:
-        return await self.get(
-            db,
-            post_id,
-            options=[
-                selectinload(BlogPost.comments),
-                selectinload(BlogPost.videos)
-            ]
+        
+        query = select(self.model).where(self.model.id == post_id).options(
+            selectinload(BlogPost.comments),
+            selectinload(BlogPost.videos)
         )
+        result = await db.execute(query)
+        return result.scalars().unique().one_or_none()
     
     async def get_by_slug_with_details(
         self,
@@ -43,11 +39,12 @@ class BlogRepository(BaseRepository[BlogPost, BlogPostCreate, BlogPostUpdate]):
     ) -> Optional[BlogPost]:
         query = select(BlogPost).options(
             selectinload(BlogPost.comments),
-            selectinload(BlogPost.videos)
+            selectinload(BlogPost.videos),
+            selectinload(BlogPost.author)
         ).where(BlogPost.slug == slug)
         
         result = await db.execute(query)
-        return result.scalar_one_or_none()
+        return result.scalars().unique().one_or_none()
     
     async def get_published(
         self,
@@ -79,7 +76,8 @@ class BlogRepository(BaseRepository[BlogPost, BlogPostCreate, BlogPostUpdate]):
             skip=skip,
             limit=limit,
             filters=filters if filters else None,
-            order_by=[desc(BlogPost.created_at)]
+            order_by=[desc(BlogPost.created_at)],
+            options=[selectinload(BlogPost.author)]
         )
     
     async def increment_views(
@@ -121,6 +119,5 @@ class BlogRepository(BaseRepository[BlogPost, BlogPostCreate, BlogPostUpdate]):
             filters=[BlogPost.published == True],
             order_by=[desc(BlogPost.views)]
         )
-
 
 blog_repository = BlogRepository()

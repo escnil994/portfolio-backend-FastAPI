@@ -1,14 +1,14 @@
-# app/utils/validators.py
-
 import re
 from urllib.parse import urlparse
-from typing import Optional
-
+from typing import Optional, Tuple
+from email_validator import validate_email as validate_email_lib, EmailNotValidError
 
 def validate_email(email: str) -> bool:
-    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    return bool(re.match(pattern, email))
-
+    try:
+        validate_email_lib(email, check_deliverability=False)
+        return True
+    except EmailNotValidError:
+        return False
 
 def validate_url(url: str, allowed_schemes: Optional[list] = None) -> bool:
     if not url:
@@ -27,35 +27,30 @@ def validate_url(url: str, allowed_schemes: Optional[list] = None) -> bool:
     except Exception:
         return False
 
-
 def validate_slug(slug: str) -> bool:
     pattern = r'^[a-z0-9]+(?:-[a-z0-9]+)*$'
     return bool(re.match(pattern, slug)) and len(slug) <= 255
-
 
 def is_valid_youtube_url(url: str) -> bool:
     youtube_patterns = [
         r'^https?://(?:www\.)?youtube\.com/watch\?v=[\w-]+',
         r'^https?://(?:www\.)?youtube\.com/embed/[\w-]+',
+        r'^https?://(?:www\.)?youtube\.com/shorts/[\w-]+',
         r'^https?://youtu\.be/[\w-]+',
     ]
     return any(re.match(pattern, url) for pattern in youtube_patterns)
 
-
 def is_valid_github_url(url: str) -> bool:
-    pattern = r'^https?://github\.com/[\w-]+/[\w.-]+'
+    pattern = r'^https?://(?:www\.)?github\.com/[\w-]+/[\w.-]+'
     return bool(re.match(pattern, url))
-
 
 def is_valid_linkedin_url(url: str) -> bool:
     pattern = r'^https?://(?:www\.)?linkedin\.com/in/[\w-]+'
     return bool(re.match(pattern, url))
 
-
 def is_valid_twitter_url(url: str) -> bool:
     pattern = r'^https?://(?:www\.)?(?:twitter\.com|x\.com)/[\w]+'
     return bool(re.match(pattern, url))
-
 
 def is_disposable_email(email: str) -> bool:
     disposable_domains = {
@@ -64,11 +59,13 @@ def is_disposable_email(email: str) -> bool:
         'yopmail.com', 'getnada.com', 'maildrop.cc'
     }
     
-    domain = email.split('@')[-1].lower()
-    return domain in disposable_domains
+    try:
+        domain = email.split('@')[-1].lower()
+        return domain in disposable_domains
+    except IndexError:
+        return False
 
-
-def validate_password_strength(password: str) -> tuple[bool, Optional[str]]:
+def validate_password_strength(password: str) -> Tuple[bool, Optional[str]]:
     if len(password) < 8:
         return False, "Password must be at least 8 characters long"
     

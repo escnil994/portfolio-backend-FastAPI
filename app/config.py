@@ -1,8 +1,6 @@
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import List, Union
-from typing import Optional
-
+from typing import List, Union, Optional
 
 class Settings(BaseSettings):
     # Database
@@ -23,7 +21,7 @@ class Settings(BaseSettings):
     ADMIN_PASSWORD: str
     ADMIN_USERNAME: str = "admin"
     
-    # Azure
+    # Azure Communication Services
     AZURE_COMMUNICATION_CONNECTION_STRING: str
     SENDER_EMAIL: str
     RECIPIENT_EMAIL: str
@@ -46,7 +44,7 @@ class Settings(BaseSettings):
     
     @field_validator('ALLOWED_ORIGINS', mode='before')
     @classmethod
-    def parse_allowed_origins(cls, v):
+    def parse_allowed_origins(cls, v: Union[str, List[str]]) -> List[str]:
         if isinstance(v, str):
             return [origin.strip() for origin in v.split(',')]
         return v
@@ -54,8 +52,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
-        case_sensitive=True
+        case_sensitive=True,
+        extra="ignore"
     )
-
 
 settings = Settings()

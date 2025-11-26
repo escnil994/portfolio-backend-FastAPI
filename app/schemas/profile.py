@@ -1,47 +1,48 @@
-# app/schemas/profile.py
-
-from pydantic import BaseModel, EmailStr, Field, ConfigDict
+from pydantic import BaseModel, HttpUrl, ConfigDict
 from typing import Optional, List
 from datetime import datetime
 from app.schemas.media import ImageResponse
 
-
 class ProfileBase(BaseModel):
-    username: str = Field(..., min_length=3, max_length=100)
-    name: str = Field(..., min_length=1, max_length=255)
-    last_name: Optional[str] = Field(None, max_length=255)
-    display_name: Optional[str] = Field(None, max_length=255)
-    title: str = Field(..., min_length=1, max_length=255)
+    name: str
+    last_name: Optional[str] = None
+    display_name: Optional[str] = None
+    title: str
     bio: Optional[str] = None
-    email: EmailStr
+    email: str
     github_url: Optional[str] = None
     linkedin_url: Optional[str] = None
     twitter_url: Optional[str] = None
-    skills: Optional[str] = None
     resume_url: Optional[str] = None
-
+    skills: Optional[str] = None
+    experience: Optional[str] = None
+    education: Optional[str] = None
+    certifications: Optional[str] = None
+    achievements: Optional[str] = None
 
 class ProfileCreate(ProfileBase):
     pass
 
-
 class ProfileUpdate(BaseModel):
-    username: Optional[str] = Field(None, min_length=3, max_length=100)
-    name: Optional[str] = Field(None, min_length=1, max_length=255)
-    last_name: Optional[str] = Field(None, max_length=255)
-    display_name: Optional[str] = Field(None, max_length=255)
-    title: Optional[str] = Field(None, min_length=1, max_length=255)
+    name: Optional[str] = None
+    last_name: Optional[str] = None
+    display_name: Optional[str] = None
+    title: Optional[str] = None
     bio: Optional[str] = None
-    email: Optional[EmailStr] = None
+    email: Optional[str] = None
     github_url: Optional[str] = None
     linkedin_url: Optional[str] = None
     twitter_url: Optional[str] = None
-    skills: Optional[str] = None
     resume_url: Optional[str] = None
-
+    skills: Optional[str] = None
+    experience: Optional[str] = None
+    education: Optional[str] = None
+    certifications: Optional[str] = None
+    achievements: Optional[str] = None
 
 class ProfileResponse(ProfileBase):
     id: int
+    user_id: int
     created_at: datetime
     updated_at: datetime
     images: List[ImageResponse] = []

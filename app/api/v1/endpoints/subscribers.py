@@ -17,17 +17,12 @@ from app.models.user import User
 
 router = APIRouter()
 
-
 @router.post("/subscribe", response_model=dict, status_code=status.HTTP_201_CREATED)
 async def subscribe(
     subscriber_data: SubscriberCreate,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db)
 ):
-    """
-    Suscribirse para recibir notificaciones de nuevos blogs y proyectos.
-    Requiere verificación por email.
-    """
     existing_subscriber = await subscriber_repository.get_by_email(
         db, subscriber_data.email
     )
@@ -77,15 +72,11 @@ async def subscribe(
         "verified": False
     }
 
-
 @router.post("/verify", response_model=dict)
 async def verify_subscription(
     verify_data: SubscriberVerify,
     db: AsyncSession = Depends(get_db)
 ):
-    """
-    Verificar suscripción mediante token enviado por email
-    """
     subscriber = await subscriber_repository.get_by_token(
         db, verify_data.token
     )
@@ -109,15 +100,11 @@ async def verify_subscription(
         "verified": True
     }
 
-
 @router.post("/unsubscribe", response_model=dict)
 async def unsubscribe(
     unsubscribe_data: UnsubscribeRequest,
     db: AsyncSession = Depends(get_db)
 ):
-    """
-    Darse de baja de las notificaciones
-    """
     subscriber = await subscriber_repository.get_by_email(
         db, unsubscribe_data.email
     )
@@ -139,8 +126,6 @@ async def unsubscribe(
         "message": "You have been unsubscribed successfully. Sorry to see you go!"
     }
 
-
-
 @router.get("/admin/all", response_model=List[SubscriberResponse])
 async def get_all_subscribers(
     skip: int = 0,
@@ -148,14 +133,10 @@ async def get_all_subscribers(
     db: AsyncSession = Depends(get_db),
     current_admin: User = Depends(get_current_admin)
 ):
-    """
-    Obtener todos los suscriptores (solo admin)
-    """
     subscribers = await subscriber_repository.get_multi(
         db, skip=skip, limit=limit
     )
     return subscribers
-
 
 @router.get("/admin/active", response_model=List[SubscriberResponse])
 async def get_active_subscribers(
@@ -164,14 +145,10 @@ async def get_active_subscribers(
     db: AsyncSession = Depends(get_db),
     current_admin: User = Depends(get_current_admin)
 ):
-    """
-    Obtener solo suscriptores activos y verificados (solo admin)
-    """
     subscribers = await subscriber_repository.get_active_verified(
         db, skip=skip, limit=limit
     )
     return subscribers
-
 
 @router.delete("/admin/{subscriber_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_subscriber(
@@ -179,9 +156,6 @@ async def delete_subscriber(
     db: AsyncSession = Depends(get_db),
     current_admin: User = Depends(get_current_admin)
 ):
-    """
-    Eliminar suscriptor permanentemente (solo admin)
-    """
     deleted = await subscriber_repository.delete(db, id=subscriber_id)
     
     if not deleted:
@@ -190,15 +164,11 @@ async def delete_subscriber(
             detail="Subscriber not found"
         )
 
-
 @router.get("/admin/stats", response_model=dict)
 async def get_subscriber_stats(
     db: AsyncSession = Depends(get_db),
     current_admin: User = Depends(get_current_admin)
 ):
-    """
-    Obtener estadísticas de suscriptores (solo admin)
-    """
     total = await subscriber_repository.count(db)
     active = await subscriber_repository.count(
         db,

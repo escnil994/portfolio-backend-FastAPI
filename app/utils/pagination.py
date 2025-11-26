@@ -1,13 +1,10 @@
-# app/utils/pagination.py
-
-from typing import TypeVar, Generic, List, Sequence
-from pydantic import BaseModel, Field
+from typing import TypeVar, Generic, List, Sequence, Tuple
+from pydantic import BaseModel, Field, ConfigDict
 from math import ceil
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 T = TypeVar('T')
-
 
 class PaginationParams(BaseModel):
     page: int = Field(default=1, ge=1)
@@ -21,7 +18,6 @@ class PaginationParams(BaseModel):
     def limit(self) -> int:
         return self.page_size
 
-
 class PaginatedResponse(BaseModel, Generic[T]):
     items: List[T]
     total: int
@@ -30,6 +26,8 @@ class PaginatedResponse(BaseModel, Generic[T]):
     total_pages: int
     has_next: bool
     has_prev: bool
+    
+    model_config = ConfigDict(from_attributes=True)
     
     @classmethod
     def create(
@@ -51,16 +49,15 @@ class PaginatedResponse(BaseModel, Generic[T]):
             has_prev=page > 1
         )
 
-
 async def paginate(
     db: AsyncSession,
     query: select,
     page: int = 1,
     page_size: int = 10
-) -> tuple[List, int]:
+) -> Tuple[List, int]:
     count_query = select(func.count()).select_from(query.alias())
     total_result = await db.execute(count_query)
-    total = total_result.scalar_one()
+    total = total_result.scalar() or 0
     
     skip = (page - 1) * page_size
     items_query = query.offset(skip).limit(page_size)

@@ -1,5 +1,3 @@
-# app/db/repositories/reaction.py
-
 from typing import Optional, Sequence
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, func, desc
@@ -7,7 +5,6 @@ from sqlalchemy import select, and_, func, desc
 from app.db.repositories.base import BaseRepository
 from app.models.reaction import Reaction, ReactionTypeEnum
 from app.schemas.reaction import ReactionCreate, ReactionUpdate
-
 
 class ReactionRepository(BaseRepository[Reaction, ReactionCreate, ReactionUpdate]):
     
@@ -121,6 +118,5 @@ class ReactionRepository(BaseRepository[Reaction, ReactionCreate, ReactionUpdate
             reaction_type.value: count 
             for reaction_type, count in counts
         }
-
 
 reaction_repository = ReactionRepository()

@@ -7,9 +7,7 @@ from app.services.email import email_service
 
 logger = logging.getLogger(__name__)
 
-
 class NotificationService:
-    """Servicio para gestionar notificaciones a suscriptores"""
     
     async def notify_new_blog_post(
         self,
@@ -18,21 +16,15 @@ class NotificationService:
         blog_slug: str,
         blog_excerpt: str
     ) -> bool:
-        """
-        Notificar a todos los suscriptores activos sobre un nuevo blog post
-        """
         try:
-            # Obtener todos los suscriptores activos y verificados
             subscribers = await subscriber_repository.get_active_verified(db)
             
             if not subscribers:
                 logger.info("No active subscribers to notify")
                 return True
             
-            # Extraer emails
             subscriber_emails = [sub.email for sub in subscribers]
             
-            # Enviar notificación en lotes de 50 para evitar límites de email
             batch_size = 50
             for i in range(0, len(subscriber_emails), batch_size):
                 batch = subscriber_emails[i:i + batch_size]
@@ -61,21 +53,15 @@ class NotificationService:
         project_id: int,
         project_description: str
     ) -> bool:
-        """
-        Notificar a todos los suscriptores activos sobre un nuevo proyecto
-        """
         try:
-            # Obtener todos los suscriptores activos y verificados
             subscribers = await subscriber_repository.get_active_verified(db)
             
             if not subscribers:
                 logger.info("No active subscribers to notify")
                 return True
             
-            # Extraer emails
             subscriber_emails = [sub.email for sub in subscribers]
             
-            # Enviar notificación en lotes de 50
             batch_size = 50
             for i in range(0, len(subscriber_emails), batch_size):
                 batch = subscriber_emails[i:i + batch_size]
@@ -96,6 +82,5 @@ class NotificationService:
         except Exception as e:
             logger.error(f"Error notifying subscribers about new project: {str(e)}")
             return False
-
 
 notification_service = NotificationService()

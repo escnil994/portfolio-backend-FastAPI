@@ -1,5 +1,3 @@
-# app/api/v1/endpoints/reactions.py
-
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
@@ -16,7 +14,6 @@ from app.services.reaction import reaction_service
 from app.api.deps import get_client_ip_from_request
 
 router = APIRouter()
-
 
 @router.post("/{entity_type}/{entity_id}", response_model=ReactionUpsertResponse, status_code=status.HTTP_200_OK)
 async def add_or_update_reaction(
@@ -56,7 +53,6 @@ async def add_or_update_reaction(
         message=message
     )
 
-
 @router.get("/{entity_type}/{entity_id}/summary", response_model=ReactionSummary)
 async def get_reactions_summary(
     entity_type: str,
@@ -82,7 +78,6 @@ async def get_reactions_summary(
     )
     
     return summary
-
 
 @router.get("/{entity_type}/{entity_id}", response_model=List[ReactionResponse])
 async def get_reactions(
@@ -111,7 +106,6 @@ async def get_reactions(
     )
     
     return reactions
-
 
 @router.delete("/{entity_type}/{entity_id}", response_model=ReactionDeleteResponse)
 async def delete_reaction(

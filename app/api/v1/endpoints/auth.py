@@ -1,6 +1,4 @@
-# app/api/v1/endpoints/auth.py
-
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 
@@ -12,7 +10,8 @@ from app.schemas.auth import (
     EnableTOTPRequest,
     EnableTOTPResponse,
     VerifyTOTPRequest,
-    PasswordChangeRequest
+    PasswordChangeRequest,
+    UserWithProfile
 )
 from app.schemas.user import UserCreate, UserResponse
 from app.services.auth import auth_service
@@ -21,7 +20,6 @@ from app.api.deps import get_current_user, get_current_admin, get_client_ip_from
 from app.models.user import User
 
 router = APIRouter()
-
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(
@@ -36,6 +34,13 @@ async def register(
             detail="Email already registered"
         )
     
+    existing_username = await auth_service.get_user_by_username(db, user_data.username)
+    if existing_username:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username already taken"
+        )
+    
     user = await auth_service.create_user(
         db=db,
         email=user_data.email,
@@ -47,31 +52,44 @@ async def register(
     
     return user
 
+def format_user_response(user: User) -> UserWithProfile:
+    return UserWithProfile(
+        id=user.id,
+        email=user.email,
+        username=user.username,
+        full_name=user.full_name,
+        is_active=user.is_active,
+        is_superuser=user.is_superuser,
+        email_2fa_enabled=user.email_2fa_enabled,
+        totp_enabled=user.totp_enabled,
+        created_at=user.created_at,
+        last_login=user.last_login,
+        profile=user.profile
+    )
 
 @router.post("/login", response_model=Token)
 async def login(
     login_data: LoginRequest,
     request: Request,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db)
 ):
-    from fastapi import Request
-    
     ip_address = get_client_ip_from_request(request)
     
-    is_blocked = await auth_service.check_login_attempts(db, login_data.email)
+    is_blocked = await auth_service.check_login_attempts(db, login_data.identifier)
     if is_blocked:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many failed login attempts. Please try again later."
         )
     
-    user = await auth_service.authenticate_user(db, login_data.email, login_data.password)
+    user = await auth_service.authenticate_user(db, login_data.identifier, login_data.password)
     
     if not user:
-        await auth_service.log_login_attempt(db, login_data.email, False, ip_address)
+        await auth_service.log_login_attempt(db, login_data.identifier, False, ip_address)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password"
+            detail="Incorrect email/username or password"
         )
     
     if user.email_2fa_enabled or user.totp_enabled:
@@ -79,12 +97,14 @@ async def login(
         
         if user.email_2fa_enabled:
             code = await auth_service.create_2fa_code(db, user.id)
-            try:
-                await email_service.send_2fa_code(user.email, code, user.full_name or user.username)
-            except Exception as e:
-                print(f"Failed to send 2FA code: {e}")
+            background_tasks.add_task(
+                email_service.send_2fa_code,
+                email=user.email,
+                code=code,
+                name=user.full_name or user.username
+            )
         
-        await auth_service.log_login_attempt(db, login_data.email, True, ip_address)
+        await auth_service.log_login_attempt(db, login_data.identifier, True, ip_address)
         
         return Token(
             access_token="",
@@ -98,10 +118,14 @@ async def login(
     )
     
     await auth_service.update_last_login(db, user.id)
-    await auth_service.log_login_attempt(db, login_data.email, True, ip_address)
+    await auth_service.log_login_attempt(db, login_data.identifier, True, ip_address)
+    await db.refresh(user)
     
-    return Token(access_token=access_token, token_type="bearer")
-
+    return Token(
+        access_token=access_token,
+        token_type="bearer",
+        user=format_user_response(user)
+    )
 
 @router.post("/verify-2fa", response_model=Token)
 async def verify_2fa(
@@ -124,43 +148,59 @@ async def verify_2fa(
             detail="User not found"
         )
     
+    is_valid = False
+    
     if user.email_2fa_enabled:
         is_valid = await auth_service.verify_2fa_code(db, user_id, verify_data.code)
-        if is_valid:
-            access_token = auth_service.create_access_token(
-                data={"user_id": user.id, "email": user.email}
-            )
-            await auth_service.update_last_login(db, user.id)
-            return Token(access_token=access_token, token_type="bearer")
     
-    if user.totp_enabled and user.totp_secret:
+    if not is_valid and user.totp_enabled and user.totp_secret:
         is_valid = auth_service.verify_totp(user.totp_secret, verify_data.code)
-        if is_valid:
-            access_token = auth_service.create_access_token(
-                data={"user_id": user.id, "email": user.email}
-            )
-            await auth_service.update_last_login(db, user.id)
-            return Token(access_token=access_token, token_type="bearer")
     
-    if user.backup_codes:
+    if not is_valid and user.backup_codes:
         is_valid = auth_service.verify_backup_code(user.backup_codes, verify_data.code)
-        if is_valid:
-            access_token = auth_service.create_access_token(
-                data={"user_id": user.id, "email": user.email}
-            )
-            await auth_service.update_last_login(db, user.id)
-            return Token(access_token=access_token, token_type="bearer")
     
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Invalid verification code"
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid verification code"
+        )
+    
+    access_token = auth_service.create_access_token(
+        data={"user_id": user.id, "email": user.email}
+    )
+    
+    await auth_service.update_last_login(db, user.id)
+    await db.refresh(user)
+    
+    return Token(
+        access_token=access_token,
+        token_type="bearer",
+        user=format_user_response(user)
     )
 
+@router.post("/refresh", response_model=Token)
+async def refresh_token(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    access_token = auth_service.create_access_token(
+        data={"user_id": current_user.id, "email": current_user.email}
+    )
+    await db.refresh(current_user)
+    
+    return Token(
+        access_token=access_token,
+        token_type="bearer",
+        user=format_user_response(current_user)
+    )
 
-@router.get("/me", response_model=UserResponse)
-async def get_me(current_user: User = Depends(get_current_user)):
-    return current_user
-
+@router.get("/me", response_model=UserWithProfile)
+async def get_me(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    await db.refresh(current_user)
+    return format_user_response(current_user)
 
 @router.post("/enable-totp", response_model=EnableTOTPResponse)
 async def enable_totp(
@@ -191,7 +231,6 @@ async def enable_totp(
         backup_codes=backup_codes
     )
 
-
 @router.post("/verify-totp")
 async def verify_totp_setup(
     request: VerifyTOTPRequest,
@@ -217,7 +256,6 @@ async def verify_totp_setup(
     
     return {"message": "TOTP enabled successfully"}
 
-
 @router.post("/disable-totp")
 async def disable_totp(
     request: EnableTOTPRequest,
@@ -236,7 +274,6 @@ async def disable_totp(
     await db.commit()
     
     return {"message": "TOTP disabled successfully"}
-
 
 @router.post("/change-password")
 async def change_password(

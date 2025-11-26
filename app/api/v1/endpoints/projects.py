@@ -5,6 +5,8 @@ from typing import Optional, List
 from app.db.session import get_db
 from app.db.repositories.project import project_repository
 from app.models.user import User
+from app.models.project import Project
+from app.models.comment import Comment
 from app.schemas.project import (
     ProjectCreate,
     ProjectUpdate,
@@ -18,10 +20,8 @@ from app.services.media import media_service
 from app.services.email import email_service
 from app.services.notification import notification_service
 from app.api.deps import get_current_admin
-from app.models.project import Comment
 
 router = APIRouter()
-
 
 @router.get("/", response_model=List[ProjectResponse])
 async def get_projects(
@@ -39,12 +39,10 @@ async def get_projects(
         images_dict = await media_service.load_images_for_entities(
             db, project_ids, 'project'
         )
-        
         for project in projects:
             project.images = images_dict.get(project.id, [])
     
     return projects
-
 
 @router.get("/{project_id}", response_model=ProjectWithDetails)
 async def get_project(
@@ -62,24 +60,28 @@ async def get_project(
     project.images = await media_service.get_images(db, project_id, 'project')
     project.comments = [c for c in project.comments if c.approved]
     
+    await project_repository.increment_views(db, project_id)
+    await db.refresh(project)
+    
     return project
 
-
-@router.post("/admin/", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/admin", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
 async def create_project(
     project_data: ProjectCreate,
-    background_tasks: BackgroundTasks,  # NUEVO
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_admin: User = Depends(get_current_admin)
 ):
-    """
-    Crear nuevo proyecto.
-    Notifica automáticamente a los suscriptores.
-    """
-    project = await project_repository.create(db, obj_in=project_data)
+    project_dict = project_data.model_dump()
+    project_dict['author_id'] = current_admin.id
+    
+    project = Project(**project_dict)
+    db.add(project)
+    await db.commit()
+    await db.refresh(project)
+
     project.images = []
     
-    # NUEVO: Notificar a suscriptores sobre el nuevo proyecto
     background_tasks.add_task(
         notification_service.notify_new_project,
         db,
@@ -90,7 +92,6 @@ async def create_project(
     
     return project
 
-
 @router.put("/admin/{project_id}", response_model=ProjectResponse)
 async def update_project(
     project_id: int,
@@ -98,10 +99,6 @@ async def update_project(
     db: AsyncSession = Depends(get_db),
     current_admin: User = Depends(get_current_admin)
 ):
-    """
-    Actualizar proyecto existente.
-    NO envía notificaciones en actualizaciones.
-    """
     project = await project_repository.get(db, project_id)
     
     if not project:
@@ -113,10 +110,7 @@ async def update_project(
     project = await project_repository.update(db, db_obj=project, obj_in=project_data)
     project.images = await media_service.get_images(db, project_id, 'project')
     
-    # NO notificamos en actualizaciones, solo en creación
-    
     return project
-
 
 @router.delete("/admin/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_project(
@@ -131,9 +125,6 @@ async def delete_project(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Project not found"
         )
-
-
-# ==================== IMÁGENES ====================
 
 @router.post("/admin/{project_id}/images/upload", response_model=ImageUploadResponse, status_code=status.HTTP_201_CREATED)
 async def upload_project_image(
@@ -166,7 +157,6 @@ async def upload_project_image(
         image=image
     )
 
-
 @router.put("/admin/{project_id}/images/{image_id}", response_model=ImageResponse)
 async def update_project_image_metadata(
     project_id: int,
@@ -191,7 +181,6 @@ async def update_project_image_metadata(
         )
     
     return image
-
 
 @router.put("/admin/{project_id}/images/{image_id}/replace", response_model=ImageUploadResponse)
 async def replace_project_image(
@@ -224,7 +213,6 @@ async def replace_project_image(
         image=image
     )
 
-
 @router.delete("/admin/{project_id}/images/{image_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_project_image(
     project_id: int,
@@ -245,13 +233,11 @@ async def delete_project_image(
             detail="Image not found"
         )
 
-
-# ==================== COMENTARIOS ====================
-
 @router.post("/{project_id}/comments", response_model=CommentResponse, status_code=status.HTTP_201_CREATED)
 async def add_project_comment(
     project_id: int,
     comment_data: CommentCreate,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db)
 ):
     project = await project_repository.get(db, project_id)
@@ -274,21 +260,16 @@ async def add_project_comment(
     await db.commit()
     await db.refresh(comment)
     
-    try:
-        await email_service.send_comment_notification(
-            commenter_name=comment_data.name,
-            commenter_email=comment_data.email,
-            comment_content=comment_data.content,
-            item_type="project",
-            item_title=project.title
-        )
-    except Exception as e:
-        print(f"Failed to send email notification: {e}")
+    background_tasks.add_task(
+        email_service.send_comment_notification,
+        commenter_name=comment_data.name,
+        commenter_email=comment_data.email,
+        comment_content=comment_data.content,
+        item_type="project",
+        item_title=project.title
+    )
     
     return comment
-
-
-# ==================== VIDEOS ====================
 
 @router.post("/admin/{project_id}/videos", response_model=VideoResponse, status_code=status.HTTP_201_CREATED)
 async def add_project_video(

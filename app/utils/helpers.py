@@ -1,39 +1,38 @@
-# app/utils/helpers.py
-
 import re
-from datetime import datetime
+import bleach
+from slugify import slugify as py_slugify
+from datetime import datetime, timezone
 from typing import Optional
 from fastapi import Request
 
-
 def slugify(text: str) -> str:
-    text = text.lower()
-    text = re.sub(r'\s+', '-', text)
-    text = re.sub(r'[^a-z0-9-]', '', text)
-    text = re.sub(r'-+', '-', text)
-    text = text.strip('-')
-    return text
-
+    return py_slugify(text)
 
 def sanitize_html(text: str) -> str:
-    return re.sub(r'<[^>]+>', '', text)
-
+    allowed_tags = ['b', 'i', 'u', 'em', 'strong', 'a', 'p', 'br', 'ul', 'ol', 'li', 'code', 'pre']
+    allowed_attrs = {'a': ['href', 'title', 'target']}
+    return bleach.clean(text, tags=allowed_tags, attributes=allowed_attrs, strip=True)
 
 def truncate_text(text: str, max_length: int = 100, suffix: str = "...") -> str:
+    if not text:
+        return ""
     if len(text) <= max_length:
         return text
     return text[:max_length - len(suffix)] + suffix
-
 
 def format_datetime(
     dt: datetime, 
     format_string: str = "%Y-%m-%d %H:%M:%S"
 ) -> str:
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
     return dt.strftime(format_string)
 
-
 def get_time_ago(dt: datetime) -> str:
-    now = datetime.utcnow()
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    
+    now = datetime.now(timezone.utc)
     diff = now - dt
     
     seconds = diff.total_seconds()
@@ -59,18 +58,17 @@ def get_time_ago(dt: datetime) -> str:
         years = int(seconds / 31536000)
         return f"{years} year{'s' if years != 1 else ''} ago"
 
-
 def get_client_ip(request: Request) -> Optional[str]:
     x_forwarded_for = request.headers.get("X-Forwarded-For")
     if x_forwarded_for:
         return x_forwarded_for.split(',')[0].strip()
     return request.client.host if request.client else None
 
-
 def extract_youtube_id(url: str) -> Optional[str]:
     patterns = [
         r'(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\n?#]+)',
         r'youtube\.com\/embed\/([^&\n?#]+)',
+        r'youtube\.com\/shorts\/([^&\n?#]+)',
     ]
     
     for pattern in patterns:
@@ -80,7 +78,6 @@ def extract_youtube_id(url: str) -> Optional[str]:
     
     return None
 
-
 def generate_random_string(length: int = 32) -> str:
     import secrets
     import string
@@ -88,11 +85,11 @@ def generate_random_string(length: int = 32) -> str:
     alphabet = string.ascii_letters + string.digits
     return ''.join(secrets.choice(alphabet) for _ in range(length))
 
-
 def clean_whitespace(text: str) -> str:
+    if not text:
+        return ""
     text = re.sub(r'\s+', ' ', text)
     return text.strip()
-
 
 def parse_tags(tags_string: str) -> list[str]:
     if not tags_string:
@@ -100,7 +97,6 @@ def parse_tags(tags_string: str) -> list[str]:
     
     tags = [tag.strip() for tag in tags_string.split(',')]
     return [tag for tag in tags if tag]
-
 
 def tags_to_string(tags: list[str]) -> str:
     return ', '.join(tags)

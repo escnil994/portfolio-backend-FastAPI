@@ -1,9 +1,5 @@
-# app/core/cache.py
-
 from typing import Optional, Any
-import json
 from datetime import timedelta
-
 
 class CacheService:
     def __init__(self):
@@ -43,6 +39,5 @@ class CacheService:
         if not self._enabled:
             return False
         return key in self._cache
-
 
 cache_service = CacheService()
