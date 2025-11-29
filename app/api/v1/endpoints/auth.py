@@ -7,6 +7,7 @@ from app.schemas.auth import (
     Token,
     LoginRequest,
     Verify2FARequest,
+    RefreshTokenRequest,
     EnableTOTPRequest,
     EnableTOTPResponse,
     VerifyTOTPRequest,
@@ -18,6 +19,7 @@ from app.services.auth import auth_service
 from app.services.email import email_service
 from app.api.deps import get_current_user, get_current_admin, get_client_ip_from_request
 from app.models.user import User
+from app.core.security_fields import encrypt_data
 
 router = APIRouter()
 
@@ -53,19 +55,7 @@ async def register(
     return user
 
 def format_user_response(user: User) -> UserWithProfile:
-    return UserWithProfile(
-        id=user.id,
-        email=user.email,
-        username=user.username,
-        full_name=user.full_name,
-        is_active=user.is_active,
-        is_superuser=user.is_superuser,
-        email_2fa_enabled=user.email_2fa_enabled,
-        totp_enabled=user.totp_enabled,
-        created_at=user.created_at,
-        last_login=user.last_login,
-        profile=user.profile
-    )
+    return UserWithProfile.model_validate(user)
 
 @router.post("/login", response_model=Token)
 async def login(
@@ -75,6 +65,7 @@ async def login(
     db: AsyncSession = Depends(get_db)
 ):
     ip_address = get_client_ip_from_request(request)
+    user_agent = request.headers.get("user-agent", "unknown")
     
     is_blocked = await auth_service.check_login_attempts(db, login_data.identifier)
     if is_blocked:
@@ -108,13 +99,14 @@ async def login(
         
         return Token(
             access_token="",
+            refresh_token="",
             token_type="bearer",
             requires_2fa=True,
             temp_token=temp_token
         )
     
-    access_token = auth_service.create_access_token(
-        data={"user_id": user.id, "email": user.email}
+    access_token, refresh_token = await auth_service.create_secure_session(
+        db, user.id, user.email, ip_address, user_agent
     )
     
     await auth_service.update_last_login(db, user.id)
@@ -123,12 +115,14 @@ async def login(
     
     return Token(
         access_token=access_token,
+        refresh_token=refresh_token,
         token_type="bearer",
         user=format_user_response(user)
     )
 
 @router.post("/verify-2fa", response_model=Token)
 async def verify_2fa(
+    request: Request,
     verify_data: Verify2FARequest,
     db: AsyncSession = Depends(get_db)
 ):
@@ -157,7 +151,10 @@ async def verify_2fa(
         is_valid = auth_service.verify_totp(user.totp_secret, verify_data.code)
     
     if not is_valid and user.backup_codes:
-        is_valid = auth_service.verify_backup_code(user.backup_codes, verify_data.code)
+        is_valid, new_backup_codes = auth_service.verify_backup_code(user.backup_codes, verify_data.code)
+        if is_valid:
+            user.backup_codes = new_backup_codes
+            await db.commit()
     
     if not is_valid:
         raise HTTPException(
@@ -165,8 +162,11 @@ async def verify_2fa(
             detail="Invalid verification code"
         )
     
-    access_token = auth_service.create_access_token(
-        data={"user_id": user.id, "email": user.email}
+    ip_address = get_client_ip_from_request(request)
+    user_agent = request.headers.get("user-agent", "unknown")
+    
+    access_token, refresh_token = await auth_service.create_secure_session(
+        db, user.id, user.email, ip_address, user_agent
     )
     
     await auth_service.update_last_login(db, user.id)
@@ -174,25 +174,36 @@ async def verify_2fa(
     
     return Token(
         access_token=access_token,
+        refresh_token=refresh_token,
         token_type="bearer",
         user=format_user_response(user)
     )
 
 @router.post("/refresh", response_model=Token)
 async def refresh_token(
-    current_user: User = Depends(get_current_user),
+    request: Request,
+    token_req: RefreshTokenRequest,
     db: AsyncSession = Depends(get_db)
 ):
-    access_token = auth_service.create_access_token(
-        data={"user_id": current_user.id, "email": current_user.email}
-    )
-    await db.refresh(current_user)
-    
-    return Token(
-        access_token=access_token,
-        token_type="bearer",
-        user=format_user_response(current_user)
-    )
+    try:
+        ip_address = get_client_ip_from_request(request)
+        user_agent = request.headers.get("user-agent", "unknown")
+        
+        new_access, new_refresh, user = await auth_service.rotate_refresh_token(
+            db, token_req.refresh_token, ip_address, user_agent
+        )
+        
+        return Token(
+            access_token=new_access,
+            refresh_token=new_refresh,
+            token_type="bearer",
+            user=format_user_response(user)
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired session"
+        )
 
 @router.get("/me", response_model=UserWithProfile)
 async def get_me(
@@ -215,13 +226,15 @@ async def enable_totp(
         )
     
     secret = auth_service.generate_totp_secret()
+    encrypted_secret = encrypt_data(secret)
+    
     uri = auth_service.generate_totp_uri(secret, current_user.email)
     qr_code = auth_service.generate_qr_code(uri)
     
     backup_codes = auth_service.generate_backup_codes()
     hashed_backup_codes = auth_service.hash_backup_codes(backup_codes)
     
-    current_user.totp_secret = secret
+    current_user.totp_secret = encrypted_secret
     current_user.backup_codes = hashed_backup_codes
     await db.commit()
     

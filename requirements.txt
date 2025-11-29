@@ -32,3 +32,7 @@ python-slugify==8.0.1
 # 2FA
 pyotp==2.9.0
 qrcode[pil]==7.4.2
+
+
+# Seguridad
+cryptography>=42.0.0

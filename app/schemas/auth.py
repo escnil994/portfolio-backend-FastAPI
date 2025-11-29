@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional
 from app.schemas.user import UserResponse
 from app.schemas.profile import ProfileResponse
@@ -9,10 +9,14 @@ class LoginRequest(BaseModel):
 
 class Token(BaseModel):
     access_token: str
+    refresh_token: str 
     token_type: str
     requires_2fa: bool = False
     temp_token: Optional[str] = None
     user: Optional['UserWithProfile'] = None
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
 
 class TokenData(BaseModel):
     user_id: Optional[int] = None
@@ -39,5 +43,4 @@ class PasswordChangeRequest(BaseModel):
 
 class UserWithProfile(UserResponse):
     profile: Optional[ProfileResponse] = None
-    
     model_config = ConfigDict(from_attributes=True)
