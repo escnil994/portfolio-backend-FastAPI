@@ -1,0 +1,46 @@
+name: SRE Portfolio Pipeline
+
+on:
+  push:
+    branches: [ "master", "main", "deployment" ]
+  pull_request:
+    branches: [ "master", "main" ]
+
+jobs:
+  test-integration:
+    runs-on: ubuntu-latest
+    
+    steps:
+    # 1. Bajamos tu código del repo
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    # 2. Instalamos Python 3.12
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12' 
+
+    # 3. Instalamos las librerías
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        # Instalamos librerías extra solo para tests
+        pip install pytest pytest-asyncio httpx aiosqlite
+
+    # 4. Configuramos un .env falso para CI
+    # (Usamos SQLite en memoria o archivo local para que sea rápido)
+    - name: Configure Test Environment
+      run: |
+        echo "DATABASE_URL=sqlite+aiosqlite:///./test_ci.db" >> .env
+        echo "SECRET_KEY=secret_temporal_para_tests_ci" >> .env
+        echo "ALGORITHM=HS256" >> .env
+        echo "ACCESS_TOKEN_EXPIRE_MINUTES=30" >> .env
+        # Las demás variables pueden estar vacías o falsas para el test
+        echo "DEBUG=True" >> .env
+
+    # 5. ¡CORRER PRUEBAS! 🚀
+    - name: Run SRE Tests
+      run: |
+        pytest -v -s
